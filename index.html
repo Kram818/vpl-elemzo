@@ -111,20 +111,7 @@ body { background: var(--bg); color: var(--white); font-family: -apple-system, B
   <input type="file" id="file-input" accept="image/*" multiple>
 </div>
 
-<div id="api-key-section" style="padding:0 16px 0;">
-  <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:10px;">
-    <span style="font-size:18px;">🔑</span>
-    <div style="flex:1;">
-      <div style="font-size:11px;color:var(--gray);margin-bottom:4px;">Claude API kulcs</div>
-      <input id="api-key-input" type="password" placeholder="sk-ant-..." 
-        style="width:100%;background:transparent;border:none;outline:none;color:var(--white);font-size:13px;font-family:monospace;">
-    </div>
-    <span id="api-key-status" style="font-size:16px;">❌</span>
-  </div>
-  <div style="font-size:10px;color:var(--gray);margin-top:6px;padding:0 4px;">
-    Szerezd be: console.anthropic.com → API Keys → Create Key
-  </div>
-</div>
+<div id="api-key-section" style="display:none;"><span id="api-key-status">✅</span></div>
 
 <div class="filter-bar">
   <button class="filter-btn active" data-mode="roi">ROI alapján</button>
@@ -291,22 +278,7 @@ document.querySelectorAll(".filter-btn").forEach(btn=>{
 const fileInput=document.getElementById("file-input");
 const uploadLabel=document.getElementById("upload-label");
 const analyzeBtn=document.getElementById("analyze-btn");
-const apiKeyInput=document.getElementById("api-key-input");
 const apiKeyStatus=document.getElementById("api-key-status");
-
-// API key handling
-apiKeyInput.addEventListener("input",()=>{
-  const val=apiKeyInput.value.trim();
-  if ((val.startsWith("sk-ant-") || val.startsWith("sk-or-")) && val.length>20) {
-    apiKeyStatus.textContent="✅";
-    localStorage.setItem("coh_api_key", val);
-  } else {
-    apiKeyStatus.textContent="❌";
-  }
-});
-// Load saved key
-const savedKey=localStorage.getItem("coh_api_key");
-if (savedKey) { apiKeyInput.value=savedKey; apiKeyStatus.textContent="✅"; }
 
 // Multiple images
 let images = []; // [{base64, mediaType}]
@@ -351,15 +323,7 @@ async function analyze() {
   document.getElementById("cards-container").innerHTML="";
   analyzeBtn.disabled=true;
 
-  const apiKey = apiKeyInput.value.trim() || localStorage.getItem("coh_api_key") || "";
-  if (!apiKey || (!apiKey.startsWith("sk-ant-") && !apiKey.startsWith("sk-or-"))) {
-    document.getElementById("loading").style.display="none";
-    const eb=document.getElementById("error-box");
-    eb.style.display="block";
-    eb.textContent="Adj meg érvényes Claude API kulcsot! (sk-ant-... kezdetű)";
-    analyzeBtn.disabled=false;
-    return;
-  }
+  const apiKey = "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";
 
   if (!images.length) { analyzeBtn.disabled=false; return; }
 
