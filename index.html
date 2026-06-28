@@ -323,54 +323,53 @@ async function analyze() {
   document.getElementById("cards-container").innerHTML="";
   analyzeBtn.disabled=true;
 
-  const apiKey = "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";
-
-  if (!images.length) { analyzeBtn.disabled=false; return; }
-
   try {
-    const prompt=`Ez egy vagy több Tippmixpro Virtuális Premier League képernyőkép.
-Olvasd ki AZ ÖSSZES látható mérkőzést és oddsokat az összes képről.
+    const prompt = `Ez egy Tippmixpro Virtuális Premier League képernyőkép.
+Olvasd ki AZ ÖSSZES látható mérkőzést és oddsokat.
 Válaszolj CSAK JSON formátumban, semmi más szöveg:
 {"meccsek":[{"hazai":"csapatnév","vendeg":"csapatnév","hazai_odds":3.15,"dontetlen_odds":3.40,"vendeg_odds":2.00}]}
-Ha nem látható egy érték, írd null-t. Csapatneveket magyarul add meg. Ne ismételj meccseket.`;
+Ha nem látható egy érték, írd null-t. Csapatneveket magyarul add meg.`;
 
-
-    // Convert images to correct OpenRouter format
-    const orContent = [];
+    // Build message content with images
+    const msgContent = [];
     images.forEach(img => {
-      orContent.push({
+      msgContent.push({
         type: "image_url",
         image_url: { url: "data:" + img.mediaType + ";base64," + img.base64 }
       });
     });
-    orContent.push({ type: "text", text: prompt });
+    msgContent.push({ type: "text", text: prompt });
 
     const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": "Bearer " + apiKey,
+        "Authorization": "Bearer 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",
         "HTTP-Referer": "https://kram818.github.io",
         "X-Title": "VPL Elemzo"
       },
       body: JSON.stringify({
         model: "anthropic/claude-haiku-4-5",
         max_tokens: 2000,
-        messages: [{ role: "user", content: orContent }]
+        messages: [{ role: "user", content: msgContent }]
       })
     });
-    const data=await resp.json();
-    if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
-    let text = data.choices?.[0]?.message?.content || "";
-    const clean=text.replace(/```json|```/g,"").trim();
-    const parsed=JSON.parse(clean);
-    renderResults(parsed.meccsek||[]);
+
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data?.error?.message || "API hiba: " + resp.status);
+    
+    const text = data.choices?.[0]?.message?.content || "";
+    const clean = text.replace(/```json|```/g, "").trim();
+    const parsed = JSON.parse(clean);
+    renderResults(parsed.meccsek || []);
+
   } catch(err) {
     document.getElementById("loading").style.display="none";
-    const eb=document.getElementById("error-box");
-    eb.style.display="block"; eb.textContent="Hiba: "+err.message;
+    const eb = document.getElementById("error-box");
+    eb.style.display = "block";
+    eb.textContent = "Hiba: " + err.message;
   }
-  analyzeBtn.disabled=false;
+  analyzeBtn.disabled = false;
 }
 
 function renderResults(meccsek) {
