@@ -297,7 +297,7 @@ const apiKeyStatus=document.getElementById("api-key-status");
 // API key handling
 apiKeyInput.addEventListener("input",()=>{
   const val=apiKeyInput.value.trim();
-  if (val.startsWith("sk-ant-") && val.length>20) {
+  if ((val.startsWith("sk-ant-") || val.startsWith("sk-or-")) && val.length>20) {
     apiKeyStatus.textContent="✅";
     localStorage.setItem("coh_api_key", val);
   } else {
@@ -352,7 +352,7 @@ async function analyze() {
   analyzeBtn.disabled=true;
 
   const apiKey = apiKeyInput.value.trim() || localStorage.getItem("coh_api_key") || "";
-  if (!apiKey || !apiKey.startsWith("sk-ant-")) {
+  if (!apiKey || (!apiKey.startsWith("sk-ant-") && !apiKey.startsWith("sk-or-"))) {
     document.getElementById("loading").style.display="none";
     const eb=document.getElementById("error-box");
     eb.style.display="block";
@@ -376,16 +376,39 @@ Ha nem látható egy érték, írd null-t. Csapatneveket magyarul add meg. Ne is
     }));
     msgContent.push({type:"text",text:prompt});
 
-    const resp=await fetch("https://api.anthropic.com/v1/messages",{
-      method:"POST",
-      headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-      body:JSON.stringify({
-        model:"claude-sonnet-4-6",max_tokens:2000,
-        messages:[{role:"user",content:msgContent}]
-      })
+    const isOpenRouter = apiKey.startsWith("sk-or-");
+    const apiUrl = isOpenRouter
+      ? "https://openrouter.ai/api/v1/chat/completions"
+      : "https://api.anthropic.com/v1/messages";
+
+    const headers = {"Content-Type":"application/json"};
+    if (isOpenRouter) {
+      headers["Authorization"] = "Bearer " + apiKey;
+    } else {
+      headers["x-api-key"] = apiKey;
+      headers["anthropic-version"] = "2023-06-01";
+      headers["anthropic-dangerous-direct-browser-access"] = "true";
+    }
+
+    const body = isOpenRouter ? JSON.stringify({
+      model: "anthropic/claude-sonnet-4-5",
+      max_tokens: 2000,
+      messages: [{role:"user", content: msgContent}]
+    }) : JSON.stringify({
+      model:"claude-sonnet-4-6", max_tokens:2000,
+      messages:[{role:"user",content:msgContent}]
     });
+
+    const resp=await fetch(apiUrl,{method:"POST",headers,body});
     const data=await resp.json();
-    const text=data.content.map(i=>i.text||"").join("");
+    let text="";
+    if (data.content) {
+      // Anthropic format
+      text=data.content.map(i=>i.text||"").join("");
+    } else if (data.choices) {
+      // OpenRouter format
+      text=data.choices[0]?.message?.content||"";
+    }
     const clean=text.replace(/```json|```/g,"").trim();
     const parsed=JSON.parse(clean);
     renderResults(parsed.meccsek||[]);
