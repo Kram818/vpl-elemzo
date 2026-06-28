@@ -315,7 +315,7 @@ fileInput.addEventListener("change",e=>{
 analyzeBtn.addEventListener("click",analyze);
 
 async function analyze() {
-  if (!imageBase64) return;
+  if (!images.length) return;
   document.getElementById("loading").style.display="block";
   document.getElementById("results").style.display="none";
   document.getElementById("no-results").style.display="none";
