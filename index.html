@@ -334,45 +334,34 @@ Válaszolj CSAK JSON formátumban, semmi más szöveg:
 {"meccsek":[{"hazai":"csapatnév","vendeg":"csapatnév","hazai_odds":3.15,"dontetlen_odds":3.40,"vendeg_odds":2.00}]}
 Ha nem látható egy érték, írd null-t. Csapatneveket magyarul add meg. Ne ismételj meccseket.`;
 
-    // Build content array with all images
-    const msgContent = images.map(img=>({
-      type:"image",source:{type:"base64",media_type:img.mediaType,data:img.base64}
-    }));
-    msgContent.push({type:"text",text:prompt});
 
-    const isOpenRouter = apiKey.startsWith("sk-or-");
-    const apiUrl = isOpenRouter
-      ? "https://openrouter.ai/api/v1/chat/completions"
-      : "https://api.anthropic.com/v1/messages";
-
-    const headers = {"Content-Type":"application/json"};
-    if (isOpenRouter) {
-      headers["Authorization"] = "Bearer " + apiKey;
-    } else {
-      headers["x-api-key"] = apiKey;
-      headers["anthropic-version"] = "2023-06-01";
-      headers["anthropic-dangerous-direct-browser-access"] = "true";
-    }
-
-    const body = isOpenRouter ? JSON.stringify({
-      model: "google/gemini-2.0-flash-lite:free",
-      max_tokens: 2000,
-      messages: [{role:"user", content: msgContent}]
-    }) : JSON.stringify({
-      model:"claude-sonnet-4-6", max_tokens:2000,
-      messages:[{role:"user",content:msgContent}]
+    // Convert images to correct OpenRouter format
+    const orContent = [];
+    images.forEach(img => {
+      orContent.push({
+        type: "image_url",
+        image_url: { url: "data:" + img.mediaType + ";base64," + img.base64 }
+      });
     });
+    orContent.push({ type: "text", text: prompt });
 
-    const resp=await fetch(apiUrl,{method:"POST",headers,body});
+    const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + apiKey,
+        "HTTP-Referer": "https://kram818.github.io",
+        "X-Title": "VPL Elemzo"
+      },
+      body: JSON.stringify({
+        model: "anthropic/claude-haiku-4-5",
+        max_tokens: 2000,
+        messages: [{ role: "user", content: orContent }]
+      })
+    });
     const data=await resp.json();
-    let text="";
-    if (data.content) {
-      // Anthropic format
-      text=data.content.map(i=>i.text||"").join("");
-    } else if (data.choices) {
-      // OpenRouter format
-      text=data.choices[0]?.message?.content||"";
-    }
+    if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+    let text = data.choices?.[0]?.message?.content || "";
     const clean=text.replace(/```json|```/g,"").trim();
     const parsed=JSON.parse(clean);
     renderResults(parsed.meccsek||[]);
