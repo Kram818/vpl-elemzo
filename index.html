@@ -355,7 +355,7 @@ Ha nem látható egy érték, írd null-t. Csapatneveket magyarul add meg. Ne is
     }
 
     const body = isOpenRouter ? JSON.stringify({
-      model: "anthropic/claude-sonnet-4-5",
+      model: "google/gemini-2.0-flash-exp:free",
       max_tokens: 2000,
       messages: [{role:"user", content: msgContent}]
     }) : JSON.stringify({
