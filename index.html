@@ -104,11 +104,26 @@ body { background: var(--bg); color: var(--white); font-family: -apple-system, B
 <div class="upload-section">
   <label class="upload-label" id="upload-label" for="file-input">
     <span class="upload-icon">📁</span>
-    <h2>Töltsd fel a képet</h2>
-    <p>Fotó vagy képernyőkép a Tippmixpro-ról</p>
-    <img id="preview-img" alt="preview">
+    <h2>Töltsd fel a képeket</h2>
+    <p>Több kép is feltölthető egyszerre</p>
+    <div id="preview-container" style="display:none;padding:8px;display:none;flex-wrap:wrap;gap:6px;"></div>
   </label>
-  <input type="file" id="file-input" accept="image/*">
+  <input type="file" id="file-input" accept="image/*" multiple>
+</div>
+
+<div id="api-key-section" style="padding:0 16px 0;">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:10px;">
+    <span style="font-size:18px;">🔑</span>
+    <div style="flex:1;">
+      <div style="font-size:11px;color:var(--gray);margin-bottom:4px;">Claude API kulcs</div>
+      <input id="api-key-input" type="password" placeholder="sk-ant-..." 
+        style="width:100%;background:transparent;border:none;outline:none;color:var(--white);font-size:13px;font-family:monospace;">
+    </div>
+    <span id="api-key-status" style="font-size:16px;">❌</span>
+  </div>
+  <div style="font-size:10px;color:var(--gray);margin-top:6px;padding:0 4px;">
+    Szerezd be: console.anthropic.com → API Keys → Create Key
+  </div>
 </div>
 
 <div class="filter-bar">
@@ -264,7 +279,7 @@ function getSignal(roi, csapatStat, mode) {
 function signalLabel(s) { return {eros:"🔥 ERŐS",jo:"✅ JÓ",figyelni:"👀 FIGYELNI",kihagyni:"⛔ KIHAGYNI"}[s]; }
 function signalIcon(s) { return {eros:"🔥",jo:"✅",figyelni:"👀",kihagyni:"⛔"}[s]; }
 
-let selectedMode="roi", imageBase64=null, imageMediaType="image/jpeg";
+let selectedMode="roi";
 
 document.querySelectorAll(".filter-btn").forEach(btn=>{
   btn.addEventListener("click",()=>{
@@ -275,23 +290,54 @@ document.querySelectorAll(".filter-btn").forEach(btn=>{
 
 const fileInput=document.getElementById("file-input");
 const uploadLabel=document.getElementById("upload-label");
-const previewImg=document.getElementById("preview-img");
 const analyzeBtn=document.getElementById("analyze-btn");
+const apiKeyInput=document.getElementById("api-key-input");
+const apiKeyStatus=document.getElementById("api-key-status");
+
+// API key handling
+apiKeyInput.addEventListener("input",()=>{
+  const val=apiKeyInput.value.trim();
+  if (val.startsWith("sk-ant-") && val.length>20) {
+    apiKeyStatus.textContent="✅";
+    localStorage.setItem("coh_api_key", val);
+  } else {
+    apiKeyStatus.textContent="❌";
+  }
+});
+// Load saved key
+const savedKey=localStorage.getItem("coh_api_key");
+if (savedKey) { apiKeyInput.value=savedKey; apiKeyStatus.textContent="✅"; }
+
+// Multiple images
+let images = []; // [{base64, mediaType}]
 
 fileInput.addEventListener("change",e=>{
-  const file=e.target.files[0]; if (!file) return;
-  imageMediaType=file.type||"image/jpeg";
-  const reader=new FileReader();
-  reader.onload=ev=>{
-    imageBase64=ev.target.result.split(",")[1];
-    previewImg.src=ev.target.result; previewImg.style.display="block";
-    uploadLabel.classList.add("has-image");
-    uploadLabel.querySelector(".upload-icon").style.display="none";
-    uploadLabel.querySelector("h2").style.display="none";
-    uploadLabel.querySelector("p").style.display="none";
-    analyzeBtn.disabled=false;
-  };
-  reader.readAsDataURL(file);
+  const files=Array.from(e.target.files);
+  if (!files.length) return;
+  images=[];
+  const previewContainer=document.getElementById("preview-container");
+  previewContainer.innerHTML="";
+  previewContainer.style.display="flex";
+  uploadLabel.classList.add("has-image");
+  uploadLabel.querySelector(".upload-icon").style.display="none";
+  uploadLabel.querySelector("h2").style.display="none";
+  uploadLabel.querySelector("p").style.display="none";
+  
+  let loaded=0;
+  files.forEach((file,i)=>{
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      const b64=ev.target.result.split(",")[1];
+      images.push({base64:b64,mediaType:file.type||"image/jpeg"});
+      const img=document.createElement("img");
+      img.src=ev.target.result;
+      img.style.cssText="width:calc(50% - 3px);border-radius:8px;object-fit:cover;max-height:120px;";
+      previewContainer.appendChild(img);
+      loaded++;
+      if (loaded===files.length) analyzeBtn.disabled=false;
+    };
+    reader.readAsDataURL(file);
+  });
 });
 
 analyzeBtn.addEventListener("click",analyze);
@@ -305,22 +351,37 @@ async function analyze() {
   document.getElementById("cards-container").innerHTML="";
   analyzeBtn.disabled=true;
 
+  const apiKey = apiKeyInput.value.trim() || localStorage.getItem("coh_api_key") || "";
+  if (!apiKey || !apiKey.startsWith("sk-ant-")) {
+    document.getElementById("loading").style.display="none";
+    const eb=document.getElementById("error-box");
+    eb.style.display="block";
+    eb.textContent="Adj meg érvényes Claude API kulcsot! (sk-ant-... kezdetű)";
+    analyzeBtn.disabled=false;
+    return;
+  }
+
+  if (!images.length) { analyzeBtn.disabled=false; return; }
+
   try {
-    const prompt=`Ez egy Tippmixpro Virtuális Premier League fogadási képernyőkép.
-Olvasd ki az összes látható mérkőzést és oddsokat.
+    const prompt=`Ez egy vagy több Tippmixpro Virtuális Premier League képernyőkép.
+Olvasd ki AZ ÖSSZES látható mérkőzést és oddsokat az összes képről.
 Válaszolj CSAK JSON formátumban, semmi más szöveg:
 {"meccsek":[{"hazai":"csapatnév","vendeg":"csapatnév","hazai_odds":3.15,"dontetlen_odds":3.40,"vendeg_odds":2.00}]}
-Ha nem látható egy érték, írd null-t. Csapatneveket magyarul add meg.`;
+Ha nem látható egy érték, írd null-t. Csapatneveket magyarul add meg. Ne ismételj meccseket.`;
+
+    // Build content array with all images
+    const msgContent = images.map(img=>({
+      type:"image",source:{type:"base64",media_type:img.mediaType,data:img.base64}
+    }));
+    msgContent.push({type:"text",text:prompt});
 
     const resp=await fetch("https://api.anthropic.com/v1/messages",{
       method:"POST",
-      headers:{"Content-Type":"application/json"},
+      headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
       body:JSON.stringify({
-        model:"claude-sonnet-4-6",max_tokens:1000,
-        messages:[{role:"user",content:[
-          {type:"image",source:{type:"base64",media_type:imageMediaType,data:imageBase64}},
-          {type:"text",text:prompt}
-        ]}]
+        model:"claude-sonnet-4-6",max_tokens:2000,
+        messages:[{role:"user",content:msgContent}]
       })
     });
     const data=await resp.json();
