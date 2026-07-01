@@ -317,7 +317,6 @@ analyzeBtn.addEventListener("click", analyze);
 async function analyze() {
   if (!images.length) return;
 
-  // Show loading
   document.getElementById("loading").style.display = "block";
   document.getElementById("results").style.display = "none";
   document.getElementById("no-results").style.display = "none";
@@ -332,65 +331,56 @@ Valaszolj CSAK JSON formatumban, semmi mas szoveg:
 {"meccsek":[{"hazai":"csapatnev","vendeg":"csapatnev","hazai_odds":3.15,"dontetlen_odds":3.40,"vendeg_odds":2.00}]}
 Ha nem lathato egy ertek, ird null-t. Csapatneveket magyarul add meg.`;
 
-    // Build Gemini parts
     const parts = [];
     for (const img of images) {
-      parts.push({
-        inline_data: {
-          mime_type: img.mediaType,
-          data: img.base64
-        }
-      });
+      parts.push({ inline_data: { mime_type: img.mediaType, data: img.base64 } });
     }
     parts.push({ text: prompt });
 
-    // Try with API key first, then Bearer token
-    let resp = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AQ.Ab8RN6Jcm74VUkcUAQzzIlkxCsUsxCL8ydgV6M9gALgQVbkvGrA",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contents: [{ parts: parts }] })
-      }
-    );
-
-    // If API key fails, try Bearer token
-    if (!resp.ok && resp.status === 401) {
-      resp = await fetch(
+    // Try all methods until one works
+    const methods = [
+      // Method 1: API key in URL (standard)
+      () => fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${"AQ.Ab8RN6Jcm74VUkcUAQzzIlkxCsUsxCL8ydgV6M9gALgQVbkvGrA"}`,
+        { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ contents: [{ parts }] }) }
+      ),
+      // Method 2: Bearer token
+      () => fetch(
         "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": "Bearer AQ.Ab8RN6Jcm74VUkcUAQzzIlkxCsUsxCL8ydgV6M9gALgQVbkvGrA"
-          },
-          body: JSON.stringify({ contents: [{ parts: parts }] })
-        }
-      );
+        { method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${"AQ.Ab8RN6Jcm74VUkcUAQzzIlkxCsUsxCL8ydgV6M9gALgQVbkvGrA"}` },
+          body: JSON.stringify({ contents: [{ parts }] }) }
+      ),
+      // Method 3: x-goog-api-key header
+      () => fetch(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
+        { method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": "AQ.Ab8RN6Jcm74VUkcUAQzzIlkxCsUsxCL8ydgV6M9gALgQVbkvGrA" },
+          body: JSON.stringify({ contents: [{ parts }] }) }
+      ),
+    ];
+
+    let data = null;
+    let lastError = "";
+
+    for (const method of methods) {
+      try {
+        const resp = await method();
+        const d = await resp.json();
+        if (resp.ok && d.candidates) { data = d; break; }
+        lastError = d?.error?.message || "HTTP " + resp.status;
+      } catch(e) { lastError = e.message; }
     }
 
-    const data = await resp.json();
+    if (!data) throw new Error("Minden modszer sikertelen: " + lastError);
 
-    if (!resp.ok) {
-      throw new Error(
-        data?.error?.message || "API hiba: " + resp.status
-      );
-    }
+    const text = data.candidates[0].content.parts[0].text || "";
+    const jsonStart = text.indexOf("{");
+    const jsonEnd = text.lastIndexOf("}");
+    if (jsonStart === -1) throw new Error("Nem talalhato JSON a valaszban");
 
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    if (!text) throw new Error("Ures valasz az API-tol");
-
-    // Clean and parse JSON
-    let clean = text.trim();
-    clean = clean.replace(/```json/g, "").replace(/```/g, "").trim();
-
-    // Find JSON object in response
-    const jsonStart = clean.indexOf("{");
-    const jsonEnd = clean.lastIndexOf("}");
-    if (jsonStart === -1 || jsonEnd === -1) throw new Error("Nem talalhato JSON a valaszban");
-    clean = clean.substring(jsonStart, jsonEnd + 1);
-
-    const parsed = JSON.parse(clean);
+    const parsed = JSON.parse(text.substring(jsonStart, jsonEnd + 1));
     const meccsek = parsed.meccsek || [];
 
     if (meccsek.length === 0) {
@@ -405,7 +395,6 @@ Ha nem lathato egy ertek, ird null-t. Csapatneveket magyarul add meg.`;
     const eb = document.getElementById("error-box");
     eb.style.display = "block";
     eb.textContent = "Hiba: " + err.message;
-    console.error("Analyze error:", err);
   }
 
   analyzeBtn.disabled = false;
