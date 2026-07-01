@@ -312,61 +312,102 @@ fileInput.addEventListener("change",e=>{
   });
 });
 
-analyzeBtn.addEventListener("click",analyze);
+analyzeBtn.addEventListener("click", analyze);
 
 async function analyze() {
   if (!images.length) return;
-  document.getElementById("loading").style.display="block";
-  document.getElementById("results").style.display="none";
-  document.getElementById("no-results").style.display="none";
-  document.getElementById("error-box").style.display="none";
-  document.getElementById("cards-container").innerHTML="";
-  analyzeBtn.disabled=true;
+
+  // Show loading
+  document.getElementById("loading").style.display = "block";
+  document.getElementById("results").style.display = "none";
+  document.getElementById("no-results").style.display = "none";
+  document.getElementById("error-box").style.display = "none";
+  document.getElementById("cards-container").innerHTML = "";
+  analyzeBtn.disabled = true;
 
   try {
-    const prompt = `Ez egy Tippmixpro Virtuális Premier League képernyőkép.
-Olvasd ki AZ ÖSSZES látható mérkőzést és oddsokat.
-Válaszolj CSAK JSON formátumban, semmi más szöveg:
-{"meccsek":[{"hazai":"csapatnév","vendeg":"csapatnév","hazai_odds":3.15,"dontetlen_odds":3.40,"vendeg_odds":2.00}]}
-Ha nem látható egy érték, írd null-t. Csapatneveket magyarul add meg.`;
+    const prompt = `Ez egy Tippmixpro Virtualis Premier League kepernyokep.
+Olvasd ki AZ OSSZES lathato meccset es oddsokat.
+Valaszolj CSAK JSON formatumban, semmi mas szoveg:
+{"meccsek":[{"hazai":"csapatnev","vendeg":"csapatnev","hazai_odds":3.15,"dontetlen_odds":3.40,"vendeg_odds":2.00}]}
+Ha nem lathato egy ertek, ird null-t. Csapatneveket magyarul add meg.`;
 
-    // Build Gemini parts with images
+    // Build Gemini parts
     const parts = [];
-    images.forEach(img => {
+    for (const img of images) {
       parts.push({
         inline_data: {
           mime_type: img.mediaType,
           data: img.base64
         }
       });
-    });
+    }
     parts.push({ text: prompt });
 
-    const resp = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AQ.Ab8RN6JRPwJGCzyooy75R5N7xjgxDu-Nf0JJQtl9_-XWWCjxZQ",
+    // Try with API key first, then Bearer token
+    let resp = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AQ.Ab8RN6Jcm74VUkcUAQzzIlkxCsUsxCL8ydgV6M9gALgQVbkvGrA",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: parts }]
-        })
+        body: JSON.stringify({ contents: [{ parts: parts }] })
       }
     );
 
+    // If API key fails, try Bearer token
+    if (!resp.ok && resp.status === 401) {
+      resp = await fetch(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer AQ.Ab8RN6Jcm74VUkcUAQzzIlkxCsUsxCL8ydgV6M9gALgQVbkvGrA"
+          },
+          body: JSON.stringify({ contents: [{ parts: parts }] })
+        }
+      );
+    }
+
     const data = await resp.json();
-    if (!resp.ok) throw new Error(data?.error?.message || "API hiba: " + resp.status);
 
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    const clean = text.replace(/```json|```/g, "").trim();
+    if (!resp.ok) {
+      throw new Error(
+        data?.error?.message || "API hiba: " + resp.status
+      );
+    }
+
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    if (!text) throw new Error("Ures valasz az API-tol");
+
+    // Clean and parse JSON
+    let clean = text.trim();
+    clean = clean.replace(/```json/g, "").replace(/```/g, "").trim();
+
+    // Find JSON object in response
+    const jsonStart = clean.indexOf("{");
+    const jsonEnd = clean.lastIndexOf("}");
+    if (jsonStart === -1 || jsonEnd === -1) throw new Error("Nem talalhato JSON a valaszban");
+    clean = clean.substring(jsonStart, jsonEnd + 1);
+
     const parsed = JSON.parse(clean);
-    renderResults(parsed.meccsek || []);
+    const meccsek = parsed.meccsek || [];
 
-  } catch(err) {
-    document.getElementById("loading").style.display="none";
+    if (meccsek.length === 0) {
+      document.getElementById("loading").style.display = "none";
+      document.getElementById("no-results").style.display = "block";
+    } else {
+      renderResults(meccsek);
+    }
+
+  } catch (err) {
+    document.getElementById("loading").style.display = "none";
     const eb = document.getElementById("error-box");
     eb.style.display = "block";
     eb.textContent = "Hiba: " + err.message;
+    console.error("Analyze error:", err);
   }
+
   analyzeBtn.disabled = false;
 }
 
